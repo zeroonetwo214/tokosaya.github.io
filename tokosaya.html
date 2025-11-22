@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TokoSaya Premium - E-commerce Style</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons for aesthetic icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Gaya kustom untuk tampilan yang lebih spesifik */
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Background sangat terang untuk kontras */
+        }
+        /* Header yang lebih menonjol dengan efek gradien dan bayangan */
+        .header-main {
+            background: linear-gradient(90deg, #1f2937 0%, #374151 100%);
+        }
+
+        /* Style untuk product card agar lebih premium */
+        .product-card {
+            transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+        }
+        .product-card:hover {
+            transform: translateY(-8px); /* Sedikit terangkat lebih tinggi */
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.15); /* Bayangan lebih dalam */
+        }
+        /* Style untuk tombol utama (kuning) */
+        .btn-primary {
+            background-color: #f59e0b;
+            color: #1f2937;
+            transition: all 0.2s ease-in-out;
+            transform: scale(1);
+        }
+        .btn-primary:hover {
+            background-color: #fbbf24;
+            transform: scale(1.02);
+        }
+        /* Style untuk notifikasi */
+        #notification-box {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+
+        /* Styling untuk Modal Overlay */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        /* Styling untuk Modal Content */
+        .modal-content {
+            animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Efek memantul */
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes popUp {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        /* Styling untuk Recently Viewed Section */
+        #recently-viewed-list::-webkit-scrollbar {
+            height: 8px;
+        }
+        #recently-viewed-list::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            setLogLevel('debug'); // Aktifkan logging debug
+            window.app = initializeApp(firebaseConfig);
+            window.db = getFirestore(window.app);
+            window.auth = getAuth(window.app);
+
+            // Export Firestore functions to the global window object immediately
+            window.doc = doc;
+            window.setDoc = setDoc;
+            window.onSnapshot = onSnapshot;
+            window.collection = collection;
+            window.query = query;
+
+            const authenticate = async () => {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(window.auth, initialAuthToken);
+                        console.log("Signed in with custom token.");
+                    } else {
+                        await signInAnonymously(window.auth);
+                        console.log("Signed in anonymously.");
+                    }
+                } catch (error) {
+                    console.error("Firebase Auth Error:", error);
+                }
+            };
+
+            // Set up Auth State Listener
+            onAuthStateChanged(window.auth, (user) => {
+                if (user) {
+                    window.userId = user.uid;
+                    window.userEmail = user.email || "Pengguna Anonim";
+                    window.isLoggedIn = user.email ? true : false; 
+                    
+                    document.getElementById('auth-link').innerHTML = `<div class="text-xs text-gray-300">Halo,</div><span class="font-bold text-sm hover:text-yellow-400 transition">${user.email ? user.email.split('@')[0] : 'Masuk'}</span>`;
+                    console.log("User state changed. UID:", window.userId, "LoggedIn:", window.isLoggedIn);
+                    
+                    // Start listening for cart data only after auth is confirmed
+                    window.updateCartFromFirestore();
+                } else {
+                    window.userId = null;
+                    window.isLoggedIn = false;
+                    document.getElementById('auth-link').innerHTML = `<div class="text-xs text-gray-300">Halo,</div><span class="font-bold text-sm hover:text-yellow-400 transition">Masuk</span>`;
+                    console.log("User logged out.");
+                }
+            });
+
+            authenticate();
+        } else {
+            console.error("Firebase configuration is missing.");
+        }
+    </script>
+
+    <!-- Notifikasi Box (Muncul di kanan bawah) -->
+    <div id="notification-box" class="fixed bottom-4 right-4 bg-gray-900 text-white p-3 rounded-lg shadow-xl opacity-0 translate-x-full transition-all duration-300 z-50">
+        <!-- Message goes here -->
+    </div>
+
+    <!-- Header Utama (Premium Dark) -->
+    <header class="header-main text-white sticky top-0 z-40 shadow-2xl">
+        <div class="max-w-7xl mx-auto p-3 flex items-center justify-between space-x-4">
+            <!-- Logo -->
+            <div class="text-3xl font-extrabold cursor-pointer text-yellow-400 hover:text-yellow-300 transition" onclick="filterProducts('all')">
+                TokoSaya
+            </div>
+
+            <!-- Search Bar -->
+            <div class="flex-grow max-w-xl hidden sm:flex">
+                <input type="text" placeholder="Cari produk, kategori, atau merek..." class="w-full p-2 rounded-l-lg text-gray-900 focus:ring-yellow-500 focus:border-yellow-500 transition duration-150 border-2 border-transparent hover:border-yellow-500">
+                <button class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 p-2 rounded-r-lg transition duration-150 flex items-center justify-center w-14">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Navigasi Kanan -->
+            <div class="flex items-center space-x-6">
+                <!-- Akun & Auth -->
+                <a id="auth-link" href="#" onclick="toggleAuthModal()" class="text-sm transition flex flex-col items-start leading-tight cursor-pointer">
+                    <div class="text-xs text-gray-300">Halo,</div>
+                    <span class="font-bold text-sm hover:text-yellow-400 transition">Masuk</span>
+                </a>
+
+                <!-- Keranjang -->
+                <button onclick="toggleCartModal()" class="relative hover:text-yellow-400 transition focus:outline-none p-1 rounded-full hover:bg-gray-700">
+                    <i data-lucide="shopping-cart" class="w-6 h-6"></i>
+                    <span id="cart-count" class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-800">0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Sub-Navigasi (Amazon Light) -->
+        <nav class="bg-gray-700 shadow-inner">
+            <div class="max-w-7xl mx-auto px-3 py-2 flex overflow-x-auto space-x-6 text-sm text-gray-200 whitespace-nowrap">
+                <p class="link font-bold text-white hover:text-yellow-400 cursor-pointer transition" onclick="filterProducts('all')">
+                    <i data-lucide="menu" class="w-4 h-4 inline-block align-text-bottom mr-1"></i> Semua
+                </p>
+                <p class="link hover:text-white cursor-pointer transition" onclick="filterProducts('offer')">Penawaran Hari Ini</p>
+                <p class="link hover:text-white cursor-pointer transition" onclick="filterProducts('gawai')">Gawai Elektronik</p>
+                <p class="link hover:text-white cursor-pointer transition" onclick="filterProducts('komputer')">Komputer</p>
+                <p class="link hover:text-white cursor-pointer transition" onclick="filterProducts('rumah')">Rumah & Dapur</p>
+                <p class="link hover:text-white cursor-pointer transition" onclick="showTemporaryMessage('Halaman Jual/Menjadi Seller')">Jual di TokoSaya</p>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Konten Utama -->
+    <main class="flex-grow max-w-7xl mx-auto p-4 md:p-8">
+
+        <!-- HERO SECTION (Banner Promosi Besar) - Latar belakang abu-abu solid -->
+        <section class="mb-10 relative h-64 md:h-96 rounded-2xl overflow-hidden shadow-2xl bg-gray-900">
+            <!-- Menghapus tag <img> dan hanya menyisakan teks promosi -->
+            <div class="absolute inset-0 flex flex-col justify-center items-start p-8 text-white">
+                <h1 class="text-4xl md:text-6xl font-extrabold mb-2 text-yellow-400 drop-shadow-lg">DISKON 70%</h1>
+                <p class="text-lg md:text-2xl font-light mb-4 drop-shadow-md">Khusus Produk Premium Pilihan Minggu Ini.</p>
+                <a href="#" onclick="filterProducts('offer')" class="btn-primary py-3 px-8 rounded-full font-bold text-lg shadow-lg hover:shadow-xl transition duration-300">
+                    Lihat Semua Diskon <i data-lucide="arrow-right" class="w-4 h-4 inline-block ml-1"></i>
+                </a>
+            </div>
+        </section>
+
+
+        <!-- Dynamic Banner / Flash Sale Timer -->
+        <div id="dynamic-banner" class="bg-white p-5 rounded-xl shadow-lg mb-8 border-l-4 border-yellow-500 flex items-center justify-between">
+            <h2 id="banner-title" class="text-2xl font-extrabold text-gray-800">Semua Produk Pilihan</h2>
+            <div id="flash-sale-timer" class="flex items-center space-x-3 hidden">
+                <p class="font-semibold text-sm text-red-500">Flash Sale berakhir dalam:</p>
+                <div class="text-3xl font-black text-red-600 bg-red-100 p-2 rounded" id="timer-display">10:00</div>
+            </div>
+        </div>
+
+        <!-- Product Grid -->
+        <section id="product-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            <!-- Produk akan di-inject di sini oleh JavaScript -->
+        </section>
+
+        <!-- Produk yang Baru Dilihat (Recently Viewed - Fitur Spesial 2) -->
+        <section id="recently-viewed-section" class="mt-12 pt-8 border-t-2 border-gray-200 hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Produk yang Baru Anda Lihat</h2>
+            <div id="recently-viewed-list" class="flex overflow-x-auto space-x-4 pb-4">
+                <!-- Produk yang baru dilihat akan di-inject di sini -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-gray-400 mt-12 pt-8 pb-4 border-t-4 border-yellow-500 shadow-inner">
+        <div class="max-w-7xl mx-auto p-4 grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div>
+                <h3 class="font-bold text-lg text-white mb-3 border-b border-gray-700 pb-2">Kenali Kami</h3>
+                <ul class="space-y-2 text-sm">
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Karir')" class="hover:text-yellow-400 transition">Karir</a></li>
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Blog')" class="hover:text-yellow-400 transition">Blog</a></li>
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Tentang TokoSaya')" class="hover:text-yellow-400 transition">Tentang TokoSaya</a></li>
+                </ul>
+            </div>
+            <div>
+                <h3 class="font-bold text-lg text-white mb-3 border-b border-gray-700 pb-2">Dapatkan Bantuan</h3>
+                <ul class="space-y-2 text-sm">
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Akun Anda')" class="hover:text-yellow-400 transition">Akun Anda</a></li>
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Pesanan')" class="hover:text-yellow-400 transition">Pesanan</a></li>
+                    <li><a href="#" onclick="showTemporaryMessage('Anda menuju ke halaman Pengiriman')" class="hover:text-yellow-400 transition">Pengiriman</a></li>
+                </ul>
+            </div>
+            <div class="col-span-2">
+                <h3 class="font-bold text-lg text-white mb-3 border-b border-gray-700 pb-2">Newsletter Eksklusif</h3>
+                <p class="text-sm mb-3">Dapatkan penawaran terbaik dan info produk terbaru langsung ke email Anda.</p>
+                <div class="mt-3 flex">
+                    <input type="email" placeholder="Masukkan Email Anda" class="p-3 rounded-l-lg text-gray-900 w-full focus:ring-yellow-500">
+                    <button class="bg-yellow-500 text-gray-900 p-3 rounded-r-lg font-bold hover:bg-yellow-600 transition">Daftar</button>
+                </div>
+            </div>
+        </div>
+        <div class="bg-gray-900 p-3 text-center text-xs text-gray-500 mt-6">
+            &copy; 2025 TokoSaya Premium Clone. Dibuat dengan cinta.
+        </div>
+    </footer>
+
+    <!-- Modal Keranjang (Cart Modal) -->
+    <div id="cart-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center">
+        <div class="modal-content bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i data-lucide="shopping-bag" class="w-6 h-6 mr-2 text-yellow-500"></i>
+                    Keranjang Belanja
+                </h3>
+                <button onclick="toggleCartModal()" class="text-gray-500 hover:text-gray-900 transition p-1 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div id="cart-items-container" class="max-h-80 overflow-y-auto space-y-4 mb-4 pr-2">
+                <!-- Cart items will be displayed here -->
+            </div>
+
+            <div class="border-t pt-4">
+                <div class="flex justify-between items-center text-xl font-bold mb-4">
+                    <span>Total:</span>
+                    <span id="cart-total" class="text-red-600">Rp 0</span>
+                </div>
+                <button id="checkout-btn" onclick="toggleCartModal(); toggleCheckoutModal();" class="btn-primary w-full py-3 rounded-xl font-bold text-lg shadow-md hover:shadow-xl transition disabled:bg-gray-400 disabled:text-gray-600" disabled>
+                    Lanjut ke Pembayaran
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Pembayaran (Checkout Modal) -->
+    <div id="checkout-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center">
+        <div class="modal-content bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i data-lucide="credit-card" class="w-6 h-6 mr-2 text-yellow-500"></i>
+                    Pilih Metode Pembayaran
+                </h3>
+                <button onclick="toggleCheckoutModal()" class="text-gray-500 hover:text-gray-900 transition p-1 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <p class="text-gray-600 mb-6 border-b pb-3">Total Belanja: <span id="checkout-total" class="font-extrabold text-2xl text-red-600 ml-2">Rp 0</span></p>
+
+            <div class="space-y-4">
+                <h4 class="font-semibold text-xl text-gray-800 border-l-4 border-yellow-500 pl-3">E-Wallet & Digital</h4>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="processPayment('DANA')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-blue-50 hover:bg-blue-100">
+                        <img src="https://placehold.co/40x40/0073e6/ffffff?text=DANA" alt="DANA" class="w-8 h-8 mr-2 rounded-lg"> DANA
+                    </button>
+                    <button onclick="processPayment('Gopay')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-green-50 hover:bg-green-100">
+                        <img src="https://placehold.co/40x40/00a747/ffffff?text=GOPAY" alt="Gopay" class="w-8 h-8 mr-2 rounded-lg"> GoPay
+                    </button>
+                    <button onclick="processPayment('ShopeePay')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-orange-50 hover:bg-orange-100">
+                        <img src="https://placehold.co/40x40/ff6600/ffffff?text=SHOPEE" alt="ShopeePay" class="w-8 h-8 mr-2 rounded-lg"> ShopeePay
+                    </button>
+                    <button onclick="processPayment('QRIS')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-teal-50 hover:bg-teal-100">
+                        <i data-lucide="qr-code" class="w-6 h-6 mr-2 text-teal-600"></i> QRIS
+                    </button>
+                </div>
+
+                <h4 class="font-semibold text-xl text-gray-800 mt-6 border-l-4 border-yellow-500 pl-3">Transfer Bank</h4>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="processPayment('BCA')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-blue-50 hover:bg-blue-100">
+                        <i data-lucide="banknote" class="w-6 h-6 mr-2 text-blue-800"></i> BCA
+                    </button>
+                    <button onclick="processPayment('Mandiri')" class="payment-btn flex items-center justify-center p-4 border-2 rounded-xl hover:border-yellow-500 transition shadow-md bg-yellow-50 hover:bg-yellow-100">
+                        <i data-lucide="banknote" class="w-6 h-6 mr-2 text-yellow-600"></i> Mandiri
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Login/Daftar (Auth Modal) -->
+    <div id="auth-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center">
+        <div class="modal-content bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm mx-4 border-t-4 border-yellow-500">
+            <div class="flex justify-between items-center border-b pb-3 mb-6">
+                <h3 id="auth-title" class="text-3xl font-extrabold text-gray-800">Masuk Akun</h3>
+                <button onclick="toggleAuthModal()" class="text-gray-500 hover:text-gray-900 transition p-1 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <form id="auth-form" onsubmit="event.preventDefault(); handleAuthSubmit()">
+                <div class="mb-4">
+                    <label for="auth-email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="auth-email" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 transition" required>
+                </div>
+                <div class="mb-6">
+                    <label for="auth-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="auth-password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 transition" required minlength="6">
+                </div>
+                <button type="submit" id="auth-submit-btn" class="btn-primary w-full py-3 rounded-xl font-bold text-lg shadow-md hover:shadow-xl transition">Masuk</button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p id="auth-toggle-text" class="text-sm text-gray-600">Belum punya akun? <a href="#" onclick="toggleAuthMode()" class="text-yellow-600 font-bold hover:underline">Daftar di sini</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Mengganti semua ikon Lucide secara dinamis
+            lucide.createIcons();
+            // Inisialisasi Produk
+            filterProducts('all');
+            // Inisialisasi Timer
+            startFlashSaleTimer();
+        });
+
+        // --- GLOBAL STATE ---
+        let cart = [];
+        let authMode = 'login'; // 'login' atau 'register'
+        let products = [
+            // Gambar Produk yang Lebih Spesifik (menggunakan URL gambar asli dan placeholder deskriptif)
+            { id: 1, name: "Headphone Bluetooth ANC Pro", price: 1200000, image: "https://placehold.co/400x400/004d99/ffffff?text=HEADPHONE+ANC", rating: 4.8, category: 'gawai', offer: true },
+            { id: 2, name: "Keyboard Mekanik TKL RGB", price: 850000, image: "https://placehold.co/400x400/331a66/ffffff?text=KEYBOARD+MECHANIC", rating: 4.5, category: 'komputer', offer: false },
+            { id: 3, name: "Smart Watch Ultra Slim Series", price: 599000, image: "https://placehold.co/400x400/cc0000/ffffff?text=SMART+WATCH+4", rating: 4.2, category: 'gawai', offer: true },
+            { id: 4, name: "Set Panci Granite Anti Lengket 5 pcs", price: 350000, image: "https://placehold.co/400x400/808080/ffffff?text=Panci+Set", rating: 4.9, category: 'rumah', offer: false },
+            { id: 5, name: "Laptop Gaming i7 RTX 40 Series", price: 15500000, image: "uploaded:download.jpeg-4c17aa0d-3b69-4d1e-bc96-19651f3935ed", rating: 4.7, category: 'komputer', offer: true },
+            { id: 6, name: "Speaker Bluetooth Tahan Air IPX7", price: 450000, image: "https://placehold.co/400x400/ff9933/ffffff?text=SPEAKER+PORTABLE", rating: 4.3, category: 'gawai', offer: false },
+            { id: 7, name: "Vacuum Cleaner Robot Auto Docking", price: 2100000, image: "https://placehold.co/400x400/009966/ffffff?text=ROBOT+VACUUM", rating: 4.6, category: 'rumah', offer: true },
+            { id: 8, name: "Monitor Curved 34 inci 144Hz", price: 6800000, image: "https://placehold.co/400x400/1a53ff/ffffff?text=MONITOR+CURVED", rating: 4.8, category: 'komputer', offer: false },
+            { id: 9, name: "Mouse Gaming Wireless Ultralight", price: 650000, image: "https://placehold.co/400x400/4d4d4d/ffffff?text=MOUSE+GAMING", rating: 4.6, category: 'komputer', offer: false },
+            { id: 10, name: "Air Fryer Digital Kapasitas Besar", price: 890000, image: "https://placehold.co/400x400/ffcc00/000000?text=AIR+FRYER+HD", rating: 4.7, category: 'rumah', offer: true },
+            { id: 11, name: "Kamera Mirrorless 4K Kit", price: 18000000, image: "https://placehold.co/400x400/000000/ffffff?text=CAMERA+MIRRORLESS", rating: 4.9, category: 'gawai', offer: false },
+            { id: 12, name: "Webcam Full HD dengan Mic", price: 250000, image: "https://placehold.co/400x400/999999/1f2937?text=WEB+CAM+HD", rating: 4.0, category: 'komputer', offer: true },
+            { id: 13, name: "Blender Multifungsi Daya Tinggi", price: 420000, image: "https://placehold.co/400x400/990033/ffffff?text=BLENDER+PRO", rating: 4.5, category: 'rumah', offer: false },
+            { id: 14, name: "Smartphone Flagship 256GB", price: 11999000, image: "https://placehold.co/400x400/3366ff/ffffff?text=SMARTPHONE+ULTRA", rating: 4.9, category: 'gawai', offer: false },
+            { id: 15, name: "Router WiFi 6 AX3000", price: 950000, image: "https://placehold.co/400x400/33cc99/ffffff?text=ROUTER+WIFI+6", rating: 4.4, category: 'komputer', offer: true },
+            { id: 16, name: "Mesin Kopi Espresso Otomatis", price: 3400000, image: "https://placehold.co/400x400/333333/ffffff?text=COFFEE+MACHINE", rating: 4.8, category: 'rumah', offer: false },
+            { id: 17, name: "Powerbank Quick Charge 20000mAh", price: 320000, image: "https://placehold.co/400x400/4d79ff/ffffff?text=POWERBANK+20000", rating: 4.3, category: 'gawai', offer: true },
+            { id: 18, name: "SSD Eksternal 1TB USB 3.1", price: 1500000, image: "https://placehold.co/400x400/6633cc/ffffff?text=SSD+1TB+EXTERNAL", rating: 4.7, category: 'komputer', offer: false },
+            { id: 19, name: "Kulkas Side by Side Smart", price: 14000000, image: "https://placehold.co/400x400/ff6666/ffffff?text=KULKAS+SIDE+SMART", rating: 4.9, category: 'rumah', offer: true },
+            { id: 20, name: "Drone Lipat 4K GPS", price: 7200000, image: "https://placehold.co/400x400/000000/ffffff?text=DRONE+4K+GPS", rating: 4.5, category: 'gawai', offer: false },
+        ];
+        let recentlyViewed = [];
+
+        // --- FIREBASE CART LOGIC ---
+
+        // Helper: Check if user is signed in with email/password (not anonymous)
+        function isUserFullyAuthenticated() {
+            return window.db && window.userId && window.isLoggedIn;
+        }
+
+        /**
+         * Converts currency to Rupiah format.
+         * @param {number} amount 
+         */
+        function formatRupiah(amount) {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0
+            }).format(amount);
+        }
+
+        /**
+         * Saves the current cart array to Firestore for the authenticated user.
+         */
+        async function saveCartToFirestore() {
+            if (!isUserFullyAuthenticated()) {
+                console.warn("Attempted to save cart, but user is not fully authenticated. Data will not persist on server.");
+                return;
+            }
+
+            try {
+                const cartDocRef = window.doc(window.db, "artifacts", appId, "users", window.userId, "data", "user_cart");
+                const cartData = {
+                    cartItems: cart,
+                    lastUpdated: new Date().toISOString()
+                };
+                await window.setDoc(cartDocRef, cartData);
+                console.log("Cart saved to Firestore successfully.");
+            } catch (error) {
+                console.error("Error saving cart to Firestore:", error);
+                showTemporaryMessage("Gagal menyimpan keranjang di server.", 'error');
+            }
+        }
+
+        /**
+         * Sets up real-time listener for cart updates from Firestore.
+         */
+        window.updateCartFromFirestore = function() {
+            if (!isUserFullyAuthenticated()) {
+                console.warn("Skipping Firestore cart listener setup: User not authenticated.");
+                // Clear cart locally if they were anonymous and now not authenticated
+                if (cart.length > 0) {
+                    cart = [];
+                    drawCart();
+                }
+                return;
+            }
+            
+            const cartDocRef = window.doc(window.db, "artifacts", appId, "users", window.userId, "data", "user_cart");
+
+            if (window.cartUnsubscribe) {
+                window.cartUnsubscribe(); // Hapus listener lama jika ada
+            }
+
+            // Start listening for real-time updates
+            window.cartUnsubscribe = window.onSnapshot(cartDocRef, (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    const data = docSnapshot.data();
+                    if (data && data.cartItems) {
+                        cart = data.cartItems;
+                        console.log("Cart loaded from Firestore:", cart);
+                        drawCart();
+                    }
+                } else {
+                    console.log("No existing cart found in Firestore. Initializing empty cart.");
+                    cart = [];
+                    drawCart();
+                    // Optional: Save empty cart to initialize the document
+                    saveCartToFirestore(); 
+                }
+            }, (error) => {
+                console.error("Error listening to Firestore cart:", error);
+                showTemporaryMessage("Gagal memuat keranjang dari server. Pastikan Anda sudah login.", 'error');
+            });
+        }
+
+
+        // --- PRODUCT RENDERING & FILTERING ---
+
+        /**
+         * Filters the product list and re-renders the grid.
+         * @param {string} category - The category to filter by ('all', 'gawai', 'komputer', 'rumah', 'offer').
+         */
+        function filterProducts(category) {
+            let filteredProducts;
+            let bannerTitle;
+
+            if (category === 'all') {
+                filteredProducts = products;
+                bannerTitle = 'Semua Produk Pilihan Hari Ini';
+                document.getElementById('flash-sale-timer').classList.add('hidden');
+            } else if (category === 'offer') {
+                filteredProducts = products.filter(p => p.offer);
+                bannerTitle = '⚡ Penawaran Hari Ini (Flash Sale)';
+                document.getElementById('flash-sale-timer').classList.remove('hidden');
+            } else {
+                filteredProducts = products.filter(p => p.category === category);
+                // Capitalize first letter for display
+                bannerTitle = 'Kategori: ' + category.charAt(0).toUpperCase() + category.slice(1);
+                document.getElementById('flash-sale-timer').classList.add('hidden');
+            }
+
+            document.getElementById('banner-title').textContent = bannerTitle;
+            drawProductGrid(filteredProducts);
+            
+            // Scroll smoothly to the product grid section
+            document.getElementById('dynamic-banner').scrollIntoView();
+        }
+
+        /**
+         * Renders the product cards into the main grid.
+         * @param {Array<Object>} productList - List of products to display.
+         */
+        function drawProductGrid(productList) {
+            const grid = document.getElementById('product-grid');
+            grid.innerHTML = ''; // Clear previous products
+
+            productList.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'product-card bg-white p-4 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-2xl';
+                
+                const html = `
+                    <div class="mb-3">
+                        <img src="${product.image}" alt="${product.name}" onerror="this.onerror=null;this.src='https://placehold.co/400x400/94a3b8/1f2937?text=Gambar+Rusak'" class="w-full h-32 object-cover rounded-lg mb-3 border border-gray-100 transition duration-300 group-hover:opacity-80">
+                        <h4 class="text-sm font-semibold text-gray-800 line-clamp-2 min-h-[40px]">${product.name}</h4>
+                        <div class="flex items-center text-xs text-yellow-500 mb-2">
+                            ${'★'.repeat(Math.floor(product.rating))}
+                            ${'☆'.repeat(5 - Math.floor(product.rating))}
+                            <span class="ml-1 text-gray-500">(${product.rating})</span>
+                        </div>
+                    </div>
+                    <div>
+                        ${product.offer ? `<p class="text-xs font-bold text-red-500 mb-1">Diskon Hari Ini!</p>` : ''}
+                        <p class="text-lg font-extrabold text-gray-900 mb-3">${formatRupiah(product.price)}</p>
+                        <button onclick="addToCart(${product.id}, event)" class="btn-primary w-full py-2 rounded-lg text-sm font-bold flex items-center justify-center shadow-md">
+                            <i data-lucide="shopping-cart" class="w-4 h-4 mr-1"></i> Tambah ke Keranjang
+                        </button>
+                    </div>
+                `;
+                card.innerHTML = html;
+                grid.appendChild(card);
+            });
+            // Recreate Lucide icons for the new elements
+            lucide.createIcons();
+        }
+
+        // --- CART & CHECKOUT LOGIC ---
+
+        /**
+         * Adds a product to the cart.
+         * @param {number} productId - ID of the product to add.
+         * @param {Event} event - The click event.
+         */
+        function addToCart(productId, event) {
+            event.stopPropagation(); // Prevent card hover effect from being interrupted
+            const product = products.find(p => p.id === productId);
+            if (!product) return;
+
+            const existingItem = cart.find(item => item.id === productId);
+
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                cart.push({ ...product, quantity: 1 });
+            }
+
+            drawCart();
+            saveCartToFirestore(); // Save to database
+
+            // Add to recently viewed if not already there
+            if (!recentlyViewed.find(item => item.id === productId)) {
+                recentlyViewed.unshift(product);
+                if (recentlyViewed.length > 5) recentlyViewed.pop(); // Max 5 items
+            }
+            drawRecentlyViewed();
+            
+            showTemporaryMessage(`${product.name} ditambahkan ke keranjang.`, 'success');
+        }
+
+        /**
+         * Renders the cart items in the modal.
+         */
+        function drawCart() {
+            const container = document.getElementById('cart-items-container');
+            const totalElement = document.getElementById('cart-total');
+            const countElement = document.getElementById('cart-count');
+            const checkoutBtn = document.getElementById('checkout-btn');
+            let total = 0;
+
+            container.innerHTML = '';
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-4 italic">Keranjang Anda kosong. Yuk, temukan barang impianmu!</p>';
+                checkoutBtn.disabled = true;
+                countElement.textContent = 0;
+            } else {
+                cart.forEach(item => {
+                    total += item.price * item.quantity;
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition';
+                    itemDiv.innerHTML = `
+                        <div class="flex items-center space-x-3">
+                            <img src="${item.image}" alt="${item.name}" class="w-12 h-12 object-cover rounded-lg border">
+                            <div>
+                                <p class="font-semibold text-sm line-clamp-1">${item.name}</p>
+                                <p class="text-xs text-gray-500">${formatRupiah(item.price)} x Qty: ${item.quantity}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <p class="font-bold text-sm text-red-600">${formatRupiah(item.price * item.quantity)}</p>
+                            <button onclick="removeFromCart(${item.id})" class="text-red-500 hover:text-red-700 transition p-1 rounded-full hover:bg-red-50">
+                                <i data-lucide="minus-circle" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(itemDiv);
+                });
+                checkoutBtn.disabled = false;
+                countElement.textContent = cart.reduce((sum, item) => sum + item.quantity, 0);
+            }
+
+            totalElement.textContent = formatRupiah(total);
+            document.getElementById('checkout-total').textContent = formatRupiah(total);
+            lucide.createIcons(); // Update icons for new elements
+        }
+
+        /**
+         * Removes an item completely from the cart or decreases its quantity.
+         * @param {number} productId - ID of the product.
+         */
+        function removeFromCart(productId) {
+            const index = cart.findIndex(item => item.id === productId);
+            if (index !== -1) {
+                if (cart[index].quantity > 1) {
+                    cart[index].quantity -= 1;
+                    showTemporaryMessage('Kuantitas produk dikurangi.');
+                } else {
+                    cart.splice(index, 1); // Remove entirely
+                    showTemporaryMessage('Produk dihapus dari keranjang.');
+                }
+                drawCart();
+                saveCartToFirestore();
+            }
+        }
+
+        /**
+         * Simulates the payment process.
+         * @param {string} method - Payment method used.
+         */
+        function processPayment(method) {
+            toggleCheckoutModal(); // Close checkout modal
+
+            if (!isUserFullyAuthenticated()) {
+                showTemporaryMessage("Gagal Bayar: Silakan Masuk/Daftar untuk menyelesaikan transaksi.", 'error');
+                return; 
+            }
+
+            // Simple payment simulation
+            showTemporaryMessage(`Pembayaran berhasil dengan ${method}. Pesanan akan segera diproses.`, 'success');
+
+            // Reset cart
+            cart = [];
+            drawCart();
+            saveCartToFirestore();
+        }
+
+        // --- AUTHENTICATION HANDLERS ---
+
+        /**
+         * Toggles between Login and Register modes in the Auth Modal.
+         */
+        function toggleAuthMode() {
+            authMode = authMode === 'login' ? 'register' : 'login';
+            const title = document.getElementById('auth-title');
+            const submitBtn = document.getElementById('auth-submit-btn');
+            const toggleText = document.getElementById('auth-toggle-text');
+
+            if (authMode === 'register') {
+                title.textContent = 'Daftar Akun Baru';
+                submitBtn.textContent = 'Daftar';
+                toggleText.innerHTML = 'Sudah punya akun? <a href="#" onclick="toggleAuthMode()" class="text-yellow-600 font-bold hover:underline">Masuk di sini</a>';
+            } else {
+                title.textContent = 'Masuk Akun';
+                submitBtn.textContent = 'Masuk';
+                toggleText.innerHTML = 'Belum punya akun? <a href="#" onclick="toggleAuthMode()" class="text-yellow-600 font-bold hover:underline">Daftar di sini</a>';
+            }
+        }
+
+        /**
+         * Handles form submission for both Login and Register.
+         */
+        async function handleAuthSubmit() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            if (!window.auth) {
+                showTemporaryMessage("Sistem autentikasi tidak tersedia.", 'error');
+                return;
+            }
+
+            try {
+                if (authMode === 'register') {
+                    // Sign Up
+                    await createUserWithEmailAndPassword(window.auth, email, password);
+                    showTemporaryMessage("Pendaftaran berhasil! Selamat datang.", 'success');
+                } else {
+                    // Sign In
+                    await signInWithEmailAndPassword(window.auth, email, password);
+                    showTemporaryMessage(`Selamat datang kembali, ${email.split('@')[0]}!`, 'success');
+                }
+                toggleAuthModal(); // Close modal on success
+            } catch (error) {
+                let errorMessage = "Terjadi kesalahan autentikasi.";
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = "Email sudah terdaftar. Silakan Masuk.";
+                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMessage = "Email atau password salah.";
+                } else if (error.code === 'auth/weak-password') {
+                    errorMessage = "Password terlalu lemah (minimal 6 karakter).";
+                }
+                showTemporaryMessage(errorMessage, 'error');
+                console.error("Auth Error:", error);
+            }
+        }
+
+        /**
+         * Signs the user out.
+         */
+        function handleSignOut() {
+            if (!window.auth) return;
+            window.signOut(window.auth).then(() => {
+                showTemporaryMessage("Anda berhasil keluar akun.", 'info');
+                // Clear local cart and reset state
+                cart = [];
+                drawCart();
+                recentlyViewed = [];
+                drawRecentlyViewed();
+                console.log("User signed out.");
+            }).catch((error) => {
+                console.error("Sign Out Error:", error);
+                showTemporaryMessage("Gagal keluar akun.", 'error');
+            });
+        }
+
+
+        // --- UTILITY FUNCTIONS ---
+
+        /**
+         * Shows a temporary notification message.
+         * @param {string} message - The message text.
+         * @param {string} type - 'success', 'error', or 'info'.
+         */
+        function showTemporaryMessage(message, type = 'info') {
+            const box = document.getElementById('notification-box');
+            
+            // Set colors based on type
+            let bgColor = 'bg-gray-900';
+            if (type === 'success') bgColor = 'bg-green-600';
+            if (type === 'error') bgColor = 'bg-red-600';
+            if (type === 'info') bgColor = 'bg-blue-600';
+
+            box.className = `fixed bottom-4 right-4 text-white p-3 rounded-xl shadow-xl opacity-100 translate-x-0 transition-all duration-300 z-50 ${bgColor}`;
+            box.innerHTML = message;
+
+            setTimeout(() => {
+                box.className = `fixed bottom-4 right-4 text-white p-3 rounded-xl shadow-xl opacity-0 translate-x-full transition-all duration-300 z-50 ${bgColor}`;
+            }, 3000);
+        }
+
+        /**
+         * Toggles the visibility of the Cart Modal.
+         */
+        function toggleCartModal() {
+            const modal = document.getElementById('cart-modal');
+            if (modal.classList.contains('hidden')) {
+                drawCart(); // Ensure cart is up-to-date before opening
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Toggles the visibility of the Checkout Modal.
+         */
+        function toggleCheckoutModal() {
+            const modal = document.getElementById('checkout-modal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Toggles the visibility of the Auth Modal, or signs out if already logged in.
+         */
+        function toggleAuthModal() {
+            if (window.isLoggedIn) {
+                // If logged in, the link acts as a sign out button
+                handleSignOut();
+                return;
+            }
+
+            const modal = document.getElementById('auth-modal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                // Ensure it defaults to login mode
+                authMode = 'login';
+                toggleAuthMode();
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Renders the Recently Viewed products section.
+         */
+        function drawRecentlyViewed() {
+            const section = document.getElementById('recently-viewed-section');
+            const list = document.getElementById('recently-viewed-list');
+            list.innerHTML = '';
+
+            if (recentlyViewed.length > 0) {
+                section.classList.remove('hidden');
+            } else {
+                section.classList.add('hidden');
+                return;
+            }
+
+            recentlyViewed.forEach(product => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex-shrink-0 w-40 bg-white p-3 rounded-xl shadow-lg border hover:shadow-xl transition product-card';
+                itemDiv.innerHTML = `
+                    <img src="${product.image}" alt="${product.name}" class="w-full h-20 object-cover rounded-lg mb-2">
+                    <p class="text-xs font-semibold line-clamp-2 min-h-[30px]">${product.name}</p>
+                    <p class="text-sm font-bold text-red-600">${formatRupiah(product.price)}</p>
+                `;
+                list.appendChild(itemDiv);
+            });
+        }
+
+
+        // --- SPECIAL FEATURE: FLASH SALE TIMER ---
+        function startFlashSaleTimer() {
+            const duration = 10 * 60; // 10 minutes in seconds
+            let timeRemaining = duration;
+            const timerDisplay = document.getElementById('timer-display');
+
+            const updateTimer = () => {
+                const minutes = String(Math.floor(timeRemaining / 60)).padStart(2, '0');
+                const seconds = String(timeRemaining % 60).padStart(2, '0');
+                timerDisplay.textContent = `${minutes}:${seconds}`;
+
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    timerDisplay.textContent = "SALE BERAKHIR!";
+                    document.getElementById('flash-sale-timer').classList.remove('text-red-600');
+                    document.getElementById('flash-sale-timer').classList.add('text-gray-600');
+                } else {
+                    timeRemaining--;
+                }
+            };
+
+            updateTimer();
+            const timerInterval = setInterval(updateTimer, 1000);
+        }
+    </script>
+
+</body>
+</html>
